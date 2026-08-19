@@ -159,6 +159,16 @@ export const deleteYggdrasilProfile = async (id: string): Promise<void> => {
     await http.delete(`/yggdrasil/profiles/${id}`);
 };
 
+/**
+ * 修改角色名（Cookie 身份验证，默认一年最多改一次）
+ * PATCH /yggdrasil/profiles/{id}
+ * 成功返回 200，返回更新后的角色（id、name）
+ */
+export const renameYggdrasilProfile = async (id: string, name: string): Promise<YggdrasilProfile> => {
+    const response = await http.patch<YggdrasilProfile>(`/yggdrasil/profiles/${id}`, {name});
+    return response.data;
+};
+
 // ============================================================
 // Yggdrasil Authserver /yggdrasil/authserver（供 Minecraft 启动器使用）
 // ============================================================

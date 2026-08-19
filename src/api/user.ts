@@ -1,5 +1,5 @@
 import http, {baseURL} from './http';
-import type {CaptchaHeaders} from './types';
+import type {CaptchaHeaders, IdentityGroup, PrefixPreset, SystemRole} from './types';
 
 export interface RegisterResponse {
     /** 创建时间，ISO 8601 UTC */
@@ -9,24 +9,27 @@ export interface RegisterResponse {
 /**
  * 使用邮箱注册账号（人机验证）
  * POST /user/register
+ * 请求体：{ email, password, emailCode, username }（展示名一律用 username）
  */
 export const registerUser = async (
     email: string,
     password: string,
     emailCode: string,
-    displayName: string,
+    username: string,
     captchaHeaders?: CaptchaHeaders
 ): Promise<RegisterResponse> => {
     const response = await http.post<RegisterResponse>(
         '/user/register',
-        {email, password, emailCode, displayName},
+        {email, password, emailCode, username},
         {headers: captchaHeaders}
     );
     return response.data;
 };
 
 export interface UserLoginByPassword {
-    email: string
+    email?: string
+    /** 也可用用户名 + 密码登录 */
+    username?: string
     password: string
 }
 
@@ -47,11 +50,19 @@ export const userLoginAPI = async (
     await http.post('/user/login', body, {headers: captchaHeaders});
 };
 
+/** 当前登录用户信息（GET /user/me） */
 export interface UserInfo {
     userId: string
-    /** 取值参考 admin 数据模型：admin / moderator / user */
-    role: string
-    displayName: string
+    /** 系统角色（非空）：user / helper / moderator / admin */
+    role: SystemRole
+    /** 当前佩戴的前缀 ID，可为 null */
+    prefixId: string | null
+    /** 该用户持有的全部前缀（可为空） */
+    prefixes: PrefixPreset[]
+    /** 所属身份组（可为空） */
+    identityGroups: IdentityGroup[]
+    /** 对外展示一律用 username */
+    username: string
     /** 绑定的邮箱，可能为空字符串 */
     email: string
     /** 是否已设置密码 */
@@ -66,6 +77,20 @@ export interface UserInfo {
  */
 export const getUserInfo = async (): Promise<UserInfo> => {
     const response = await http.get<UserInfo>('/user/me');
+    return response.data;
+};
+
+export interface ChangePrefixResponse {
+    /** 佩戴后的前缀 ID，可为 null */
+    prefixId: string | null
+}
+
+/**
+ * 选择当前佩戴的前缀（自身持有的多个前缀中选择一个，或传 null 不佩戴）
+ * PUT /user/me/prefix
+ */
+export const changeUserPrefix = async (prefixId: string | null): Promise<ChangePrefixResponse> => {
+    const response = await http.put<ChangePrefixResponse>('/user/me/prefix', {prefixId});
     return response.data;
 };
 
@@ -113,6 +138,85 @@ export const setUserEmail = async (
  */
 export const userLogout = async (): Promise<void> => {
     await http.post('/user/logout');
+};
+
+// ============================================================
+// 通知 /user/notifications
+// ============================================================
+
+export interface UserNotification {
+    id: string
+    title: string
+    content: string
+    isRead: boolean
+    createdAt: string
+}
+
+export interface NotificationListResponse {
+    total: number
+    unread: number
+    page: number
+    pageSize: number
+    items: UserNotification[]
+}
+
+/**
+ * 获取当前用户的站内通知列表（Cookie 身份验证）
+ * GET /user/notifications
+ */
+export const getUserNotifications = async (
+    page = 1,
+    pageSize = 20
+): Promise<NotificationListResponse> => {
+    const response = await http.get<NotificationListResponse>('/user/notifications', {
+        params: {page, pageSize}
+    });
+    return response.data;
+};
+
+/**
+ * 将通知标记为已读（不传 id 表示全部已读）
+ * PUT /user/notifications/{id}/read 或 PUT /user/notifications/read
+ * 成功返回 204
+ */
+export const markNotificationRead = async (id?: string): Promise<void> => {
+    if (id) {
+        await http.put(`/user/notifications/${id}/read`);
+    } else {
+        await http.put('/user/notifications/read');
+    }
+};
+
+// ============================================================
+// 全站公告 /user/announcements
+// ============================================================
+
+export interface Announcement {
+    id: string
+    title: string
+    content: string
+    publishedAt: string
+}
+
+export interface AnnouncementListResponse {
+    total: number
+    page: number
+    pageSize: number
+    items: Announcement[]
+}
+
+/**
+ * 获取当前生效的全站公告列表（Cookie 身份验证）
+ * GET /user/announcements
+ */
+export const getUserAnnouncements = async (
+    page = 1,
+    pageSize = 20
+): Promise<AnnouncementListResponse> => {
+    const response = await http.get<AnnouncementListResponse>('/user/announcements', {
+        params: {page, pageSize}
+    });
+    return response.data;
 };
 
 // ============================================================

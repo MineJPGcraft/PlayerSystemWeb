@@ -54,3 +54,32 @@ export interface YggdrasilMetaResponse {
     /** PEM 格式公钥 */
     signaturePublickey: string
 }
+
+/** 系统角色（并行双模型之一，用户必有一个） */
+export type SystemRole = 'user' | 'helper' | 'moderator' | 'admin'
+
+/** 前缀预设项（含展示名与背景色） */
+export interface PrefixPreset {
+    id: string
+    /** 前缀字符串，如 [VIP] */
+    value: string
+    /** 展示名，可为 null */
+    displayName: string | null
+    /** 背景色（十六进制），可为 null */
+    backgroundColor: string | null
+}
+
+/** 身份组（自定义角色） */
+export interface IdentityGroup {
+    id: string
+    name: string
+    displayName: string | null
+}
+
+/** 通用分页响应形状（各端点字段名不同，见各域文件） */
+export interface PageParams {
+    /** 页码，默认 1 */
+    page?: number
+    /** 每页条数，默认 20 */
+    pageSize?: number
+}

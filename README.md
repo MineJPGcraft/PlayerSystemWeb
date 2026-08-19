@@ -8,6 +8,20 @@
 
 有关 Minecraft 的 authlib-injector 技术，请详见 [yushijinhun/authlib-injector](https://github.com/yushijinhun/authlib-injector)。
 
+## 功能特性
+
+接口规范以 [AuthAPI-doc](https://github.com/AuthAPI/AuthAPI-doc) 为准，前端已实现：
+
+- **账号体系**：邮箱 / 用户名 + 密码登录、邮箱验证码登录与注册、OIDC（Google / GitHub 等）登录与绑定、前置人机验证（Turnstile / hCaptcha / reCAPTCHA / 极验，Provider 由后端下发，开关热更新并自动重试）、多前缀模型（持有多个前缀，佩戴其一或置空）
+- **角色与皮肤**：角色创建 / 删除 / 改名（一年一次限频）、皮肤与披风上传 / 清除（依据 `uploadableTextures` 能力）、skinview3d 3D 预览
+- **启动器会话**：创建 / 查看凭据 / 删除，绑定角色，供 authlib-injector 启动器登录
+- **社区**：投票（单选 / 多选，结果不公开）、议题（公开 / 私有、标签、评论、开 / 关）、站内通知（已读 / 全部已读）、全站公告
+- **管理侧（Moderator 及以上）**：用户列表与详情、前缀授予 / 收回、封禁 / 解封、投票管理（创建 / 统计 / 删除）、议题标签与开 / 关、主站审计日志、身份组查看、Yggdrasil 角色 / 材质管理
+- **管理后台（Admin / SuperAdmin）**：独立后台鉴权（主站 Cookie + 后台 JWT）、首次设密、系统角色变更、身份组增删改与用户分配、站内通知、全站公告、Issue 标签、前缀预设、配置热重载、后台审计日志
+
+## 主题
+
+内置五套主题（浅色 / 深色 / 海洋 / 极光浅色 / 极光深色），支持跟随系统，选择持久化到本地；通过 `src/themes/*.css` 可自由扩展。
 
 ## 声明
 

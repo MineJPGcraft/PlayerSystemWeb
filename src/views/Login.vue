@@ -7,27 +7,34 @@ import {Input} from '@/components/ui/input';
 import {Label} from '@/components/ui/label';
 import {Separator} from '@/components/ui/separator';
 import {Tabs, TabsContent, TabsList, TabsTrigger} from '@/components/ui/tabs';
+import AuthShell from '@/components/AuthShell.vue';
 import {
   getOidcAuthorizeUrl,
   getOidcProviders,
-  getUserInfo,
   type OidcProvider,
   sendLoginEmailCode,
   userLoginAPI,
 } from '@/api';
-import {AxiosError} from 'axios';
+import {withCaptcha} from '@/composables/useCaptcha';
+import {useUserInfo} from '@/composables/useUserInfo';
+import {extractErrorMessage} from '@/lib/apiError';
 
 // 登录方式：password 密码 / emailCode 邮箱验证码
 const loginMode = ref<'password' | 'emailCode'>('password');
 
-const email = ref('');
+const account = ref('');
 const password = ref('');
+const email = ref('');
 const emailCode = ref('');
 const errorMessage = ref('');
 const isSendingCode = ref(false);
+const isSubmitting = ref(false);
+
+const captchaEl = ref<HTMLDivElement | null>(null);
 
 const router = useRouter();
 const route = useRoute();
+const {setUser} = useUserInfo();
 
 // OIDC 提供商
 const oidcProviders = ref<OidcProvider[]>([]);
@@ -45,8 +52,9 @@ onMounted(async () => {
 
 /** 登录成功后的统一处理：拉取用户信息作为前端登录态并跳转 */
 const handleLoginSuccess = async (redirectTarget: string) => {
+  const {getUserInfo} = await import('@/api');
   const user = await getUserInfo();
-  localStorage.setItem('userInfo', JSON.stringify(user));
+  setUser(user);
   router.push(redirectTarget);
 };
 
@@ -58,18 +66,25 @@ const getRedirectTarget = (): string => {
 
 const handlePasswordLogin = async () => {
   errorMessage.value = '';
-  if (!email.value || !password.value) {
-    errorMessage.value = '邮箱和密码都是必填项。';
+  if (!account.value || !password.value) {
+    errorMessage.value = '账号和密码都是必填项。';
     return;
   }
-
+  isSubmitting.value = true;
   try {
-    await userLoginAPI({email: email.value, password: password.value});
+    // 账号支持邮箱或用户名（含 @ 按邮箱处理，否则按用户名）
+    const body = account.value.includes('@')
+        ? {email: account.value, password: password.value}
+        : {username: account.value, password: password.value};
+    await withCaptcha('login', () => captchaEl.value, async (headers) => {
+      await userLoginAPI(body, headers);
+    });
     await handleLoginSuccess(getRedirectTarget());
   } catch (error) {
     console.error('登录失败:', error);
-    const err = error as AxiosError<{ errorMessage?: string }>;
-    errorMessage.value = err.response?.data?.errorMessage || '登录失败。请检查您的凭据并重试。';
+    errorMessage.value = extractErrorMessage(error, '登录失败。请检查您的凭据并重试。');
+  } finally {
+    isSubmitting.value = false;
   }
 };
 
@@ -81,12 +96,13 @@ const handleSendCode = async () => {
   isSendingCode.value = true;
   errorMessage.value = '';
   try {
-    await sendLoginEmailCode(email.value);
+    await withCaptcha('email-code-login', () => captchaEl.value, async (headers) => {
+      await sendLoginEmailCode(email.value, headers);
+    });
     errorMessage.value = '验证码已发送到您的邮箱。';
   } catch (error) {
     console.error('发送验证码失败:', error);
-    const err = error as AxiosError<{ errorMessage?: string }>;
-    errorMessage.value = err.response?.data?.errorMessage || '验证码发送失败，请重试。';
+    errorMessage.value = extractErrorMessage(error, '验证码发送失败，请重试。');
   } finally {
     isSendingCode.value = false;
   }
@@ -98,14 +114,17 @@ const handleEmailCodeLogin = async () => {
     errorMessage.value = '邮箱和验证码都是必填项。';
     return;
   }
-
+  isSubmitting.value = true;
   try {
-    await userLoginAPI({email: email.value, emailCode: emailCode.value});
+    await withCaptcha('login', () => captchaEl.value, async (headers) => {
+      await userLoginAPI({email: email.value, emailCode: emailCode.value}, headers);
+    });
     await handleLoginSuccess(getRedirectTarget());
   } catch (error) {
     console.error('验证码登录失败:', error);
-    const err = error as AxiosError<{ errorMessage?: string }>;
-    errorMessage.value = err.response?.data?.errorMessage || '登录失败。请检查验证码并重试。';
+    errorMessage.value = extractErrorMessage(error, '登录失败。请检查验证码并重试。');
+  } finally {
+    isSubmitting.value = false;
   }
 };
 
@@ -126,15 +145,11 @@ const handleOidcLogin = (providerId: string) => {
 </script>
 
 <template>
-  <div class="flex items-center justify-center min-h-screen bg-background">
-    <Card class="w-full max-w-sm">
+  <AuthShell title="登录" description="登录您的账户以管理角色、皮肤与社区内容。">
+    <Card class="w-full border-border/60 shadow-xl shadow-black/5 backdrop-blur">
       <CardHeader class="text-center">
-        <CardTitle class="text-2xl">
-          登录
-        </CardTitle>
-        <CardDescription>
-          登录您的账户以管理角色与皮肤。
-        </CardDescription>
+        <CardTitle class="text-2xl">欢迎回来</CardTitle>
+        <CardDescription>登录您的账户，继续管理角色与皮肤。</CardDescription>
       </CardHeader>
       <CardContent class="grid gap-4">
         <Tabs v-model="loginMode" class="w-full">
@@ -145,13 +160,13 @@ const handleOidcLogin = (providerId: string) => {
 
           <TabsContent class="grid gap-4 mt-4" value="password">
             <div class="grid gap-2">
-              <Label for="email">邮箱</Label>
+              <Label for="email">邮箱 / 用户名</Label>
               <Input
                   id="email"
-                  v-model="email"
-                  placeholder="m@example.com"
+                  v-model="account"
+                  placeholder="m@example.com 或用户名"
                   required
-                  type="email"
+                  autocomplete="username"
               />
             </div>
             <div class="grid gap-2">
@@ -161,7 +176,7 @@ const handleOidcLogin = (providerId: string) => {
                   忘记密码？
                 </router-link>
               </div>
-              <Input id="password" v-model="password" required type="password"/>
+              <Input id="password" v-model="password" required type="password" autocomplete="current-password"/>
             </div>
           </TabsContent>
 
@@ -182,12 +197,15 @@ const handleOidcLogin = (providerId: string) => {
           </TabsContent>
         </Tabs>
 
+        <!-- 人机验证挂载点（按后端配置渲染 widget） -->
+        <div ref="captchaEl" class="min-h-0"/>
+
         <div v-if="errorMessage" class="text-sm font-medium text-destructive">
           {{ errorMessage }}
         </div>
 
-        <Button type="submit" class="w-full" @click="handleLogin">
-          登录
+        <Button type="submit" class="w-full" :disabled="isSubmitting" @click="handleLogin">
+          {{ isSubmitting ? '登录中...' : '登录' }}
         </Button>
 
         <!-- OIDC 登录 -->
@@ -220,5 +238,5 @@ const handleOidcLogin = (providerId: string) => {
         </router-link>
       </CardFooter>
     </Card>
-  </div>
+  </AuthShell>
 </template>

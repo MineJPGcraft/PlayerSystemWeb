@@ -3,10 +3,14 @@ import {onMounted, ref} from 'vue';
 import {useRoute, useRouter} from 'vue-router';
 import {Button} from '@/components/ui/button';
 import {Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle,} from '@/components/ui/card';
+import AuthShell from '@/components/AuthShell.vue';
 import {getUserInfo} from '@/api';
+import {useUserInfo} from '@/composables/useUserInfo';
+import {Loader2} from 'lucide-vue-next';
 
 const route = useRoute();
 const router = useRouter();
+const {setUser} = useUserInfo();
 
 const loading = ref(true);
 const error = ref<string | null>(null);
@@ -37,7 +41,7 @@ onMounted(async () => {
   // 成功：后端已通过 Set-Cookie 建立会话，拉取用户信息作为前端登录态
   try {
     const user = await getUserInfo();
-    localStorage.setItem('userInfo', JSON.stringify(user));
+    setUser(user);
     router.replace(resolveAfterTarget(after));
   } catch (e) {
     console.error('OIDC 回调后获取用户信息失败:', e);
@@ -49,18 +53,17 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="flex items-center justify-center min-h-screen bg-background">
-    <Card class="w-full max-w-sm">
+  <AuthShell title="授权结果" description="第三方登录处理中。">
+    <Card class="w-full border-border/60 shadow-xl shadow-black/5 backdrop-blur">
       <CardHeader class="text-center">
-        <CardTitle class="text-2xl">
-          授权结果
-        </CardTitle>
+        <CardTitle class="text-2xl">授权结果</CardTitle>
         <CardDescription v-if="loading">
-          正在确认您的登录状态...
+          <span class="inline-flex items-center gap-2">
+            <Loader2 class="h-4 w-4 animate-spin"/>
+            正在确认您的登录状态...
+          </span>
         </CardDescription>
-        <CardDescription v-else>
-          第三方登录未完成
-        </CardDescription>
+        <CardDescription v-else>第三方登录未完成</CardDescription>
       </CardHeader>
       <CardContent v-if="!loading" class="grid gap-4 text-center">
         <p v-if="errorCode === 'UserBanned'" class="text-sm font-medium text-destructive">
@@ -79,5 +82,5 @@ onMounted(async () => {
         </Button>
       </CardFooter>
     </Card>
-  </div>
+  </AuthShell>
 </template>

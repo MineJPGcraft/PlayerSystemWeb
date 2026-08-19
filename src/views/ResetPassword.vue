@@ -5,8 +5,11 @@ import {Button} from '@/components/ui/button';
 import {Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle,} from '@/components/ui/card';
 import {Input} from '@/components/ui/input';
 import {Label} from '@/components/ui/label';
+import AuthShell from '@/components/AuthShell.vue';
 import {changePassword, getUserInfo, sendChangePasswordEmailCode, sendLoginEmailCode, userLoginAPI,} from '@/api';
-import {AxiosError} from 'axios';
+import {withCaptcha} from '@/composables/useCaptcha';
+import {useUserInfo} from '@/composables/useUserInfo';
+import {extractErrorMessage} from '@/lib/apiError';
 
 // ============ 第一步：使用邮箱验证码登录 ============
 const email = ref('');
@@ -25,9 +28,12 @@ const passwordMessage = ref('');
 const passwordIsError = ref(false);
 const isSavingPassword = ref(false);
 
+const captchaEl = ref<HTMLDivElement | null>(null);
+
 // 是否已完成验证码登录（进入第二步）
 const loggedIn = ref(false);
 const router = useRouter();
+const {setUser} = useUserInfo();
 
 const handleSendLoginCode = async () => {
   loginMessage.value = '';
@@ -39,11 +45,12 @@ const handleSendLoginCode = async () => {
   }
   isSendingLoginCode.value = true;
   try {
-    await sendLoginEmailCode(email.value);
+    await withCaptcha('email-code-login', () => captchaEl.value, async (headers) => {
+      await sendLoginEmailCode(email.value, headers);
+    });
     loginMessage.value = '验证码已发送到您的邮箱。';
   } catch (error) {
-    const err = error as AxiosError<{ errorMessage?: string }>;
-    loginMessage.value = err.response?.data?.errorMessage || '验证码发送失败，请重试。';
+    loginMessage.value = extractErrorMessage(error, '验证码发送失败，请重试。');
     loginIsError.value = true;
   } finally {
     isSendingLoginCode.value = false;
@@ -61,13 +68,14 @@ const handleLoginWithCode = async () => {
   }
   isLoggingIn.value = true;
   try {
-    await userLoginAPI({email: email.value, emailCode: loginCode.value});
+    await withCaptcha('login', () => captchaEl.value, async (headers) => {
+      await userLoginAPI({email: email.value, emailCode: loginCode.value}, headers);
+    });
     const user = await getUserInfo();
-    localStorage.setItem('userInfo', JSON.stringify(user));
+    setUser(user);
     loggedIn.value = true;
   } catch (error) {
-    const err = error as AxiosError<{ errorMessage?: string }>;
-    loginMessage.value = err.response?.data?.errorMessage || '验证码登录失败，请重试。';
+    loginMessage.value = extractErrorMessage(error, '验证码登录失败，请重试。');
     loginIsError.value = true;
   } finally {
     isLoggingIn.value = false;
@@ -82,8 +90,7 @@ const handleSendPasswordCode = async () => {
     await sendChangePasswordEmailCode();
     passwordMessage.value = '验证码已发送到您的邮箱。';
   } catch (error) {
-    const err = error as AxiosError<{ errorMessage?: string }>;
-    passwordMessage.value = err.response?.data?.errorMessage || '验证码发送失败，请重试。';
+    passwordMessage.value = extractErrorMessage(error, '验证码发送失败，请重试。');
     passwordIsError.value = true;
   } finally {
     isSendingPasswordCode.value = false;
@@ -107,14 +114,13 @@ const handleSavePassword = async () => {
   try {
     await changePassword({emailCode: passwordCode.value, newPassword: newPassword.value});
     // 修改密码会清除全部会话，退出前端登录态
-    localStorage.removeItem('userInfo');
+    setUser(null);
     passwordMessage.value = '密码重置成功，请使用新密码登录。';
     setTimeout(() => {
       router.push('/login');
     }, 1500);
   } catch (error) {
-    const err = error as AxiosError<{ errorMessage?: string }>;
-    passwordMessage.value = err.response?.data?.errorMessage || '密码重置失败，请重试。';
+    passwordMessage.value = extractErrorMessage(error, '密码重置失败，请重试。');
     passwordIsError.value = true;
   } finally {
     isSavingPassword.value = false;
@@ -123,12 +129,10 @@ const handleSavePassword = async () => {
 </script>
 
 <template>
-  <div class="flex items-center justify-center min-h-screen bg-background">
-    <Card class="w-full max-w-sm">
+  <AuthShell title="重置密码" description="通过邮箱验证码验证身份并设置新密码。">
+    <Card class="w-full border-border/60 shadow-xl shadow-black/5 backdrop-blur">
       <CardHeader class="text-center">
-        <CardTitle class="text-2xl">
-          重置密码
-        </CardTitle>
+        <CardTitle class="text-2xl">重置密码</CardTitle>
         <CardDescription>
           {{ loggedIn ? '设置您的新密码。' : '通过邮箱验证码验证身份。' }}
         </CardDescription>
@@ -149,6 +153,7 @@ const handleSavePassword = async () => {
           <Label for="login-code">邮箱验证码</Label>
           <Input id="login-code" v-model="loginCode" placeholder="请输入验证码" required/>
         </div>
+        <div ref="captchaEl" class="min-h-0"/>
         <div v-if="loginMessage" :class="['text-sm font-medium', loginIsError ? 'text-destructive' : 'text-primary']">
           {{ loginMessage }}
         </div>
@@ -170,11 +175,11 @@ const handleSavePassword = async () => {
         </div>
         <div class="grid gap-2">
           <Label for="new-password">新密码</Label>
-          <Input id="new-password" v-model="newPassword" required type="password"/>
+          <Input id="new-password" v-model="newPassword" required type="password" autocomplete="new-password"/>
         </div>
         <div class="grid gap-2">
           <Label for="confirm-new-password">确认新密码</Label>
-          <Input id="confirm-new-password" v-model="confirmNewPassword" required type="password"/>
+          <Input id="confirm-new-password" v-model="confirmNewPassword" required type="password" autocomplete="new-password"/>
         </div>
         <div v-if="passwordMessage"
              :class="['text-sm font-medium', passwordIsError ? 'text-destructive' : 'text-primary']">
@@ -192,5 +197,5 @@ const handleSavePassword = async () => {
         </router-link>
       </CardFooter>
     </Card>
-  </div>
+  </AuthShell>
 </template>

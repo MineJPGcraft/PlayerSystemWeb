@@ -1,26 +1,32 @@
 <script lang="ts" setup>
 import {computed, onMounted, ref} from 'vue'
-import {Card, CardContent, CardDescription, CardHeader, CardTitle,} from '@/components/ui/card'
+import {Badge} from '@/components/ui/badge'
 import {Button} from '@/components/ui/button'
-import {Label} from '@/components/ui/label'
+import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card'
 import {Input} from '@/components/ui/input'
+import {Label} from '@/components/ui/label'
 import {Tabs, TabsContent, TabsList, TabsTrigger} from '@/components/ui/tabs'
+import AppPageHeader from '@/components/AppPageHeader.vue'
+import UserDisplay from '@/components/UserDisplay.vue'
 import {
   changePassword,
+  changeUserPrefix,
   getOidcBindUrl,
   getOidcProviders,
-  getUserInfo,
   type OidcProvider,
   sendChangePasswordEmailCode,
   sendSetEmailCode,
   setUserEmail,
   unbindOidc,
 } from '@/api'
-import {AxiosError} from 'axios'
+import {useUserInfo} from '@/composables/useUserInfo'
+import {extractErrorMessage} from '@/lib/apiError'
+import {ROLE_LABEL} from '@/lib/permissions'
+
+const {user, setUser} = useUserInfo()
 
 // ============ 用户信息 ============
 const userEmail = ref('')
-const displayName = ref('')
 const hasPassword = ref(true)
 const bindingOIDC = ref<string[]>([])
 
@@ -48,6 +54,12 @@ const oidcProviders = ref<OidcProvider[]>([])
 const oidcMessage = ref('')
 const oidcIsError = ref(false)
 
+// ============ 佩戴前缀 ============
+const wearPrefixId = ref<string | null>(null)
+const prefixMessage = ref('')
+const prefixIsError = ref(false)
+const isSavingPrefix = ref(false)
+
 const boundProviders = computed(() =>
     oidcProviders.value.filter(p => bindingOIDC.value.includes(p.providerId))
 )
@@ -58,11 +70,12 @@ const unboundProviders = computed(() =>
 const OIDC_CALLBACK_URI = `${window.location.origin}/oidc/callback?after=/profile`
 
 const loadUserInfo = async () => {
-  const user = await getUserInfo()
-  userEmail.value = user.email
-  displayName.value = user.displayName
-  hasPassword.value = user.hasPassword
-  bindingOIDC.value = user.bindingOIDC || []
+  const u = await import('@/api').then(m => m.getUserInfo())
+  setUser(u)
+  userEmail.value = u.email
+  hasPassword.value = u.hasPassword
+  bindingOIDC.value = u.bindingOIDC || []
+  wearPrefixId.value = u.prefixId
 }
 
 onMounted(async () => {
@@ -79,6 +92,23 @@ onMounted(async () => {
   }
 })
 
+// ============ 佩戴前缀 ============
+const handleSavePrefix = async () => {
+  prefixMessage.value = ''
+  prefixIsError.value = false
+  isSavingPrefix.value = true
+  try {
+    const res = await changeUserPrefix(wearPrefixId.value)
+    prefixMessage.value = '佩戴前缀已更新。'
+    await loadUserInfo()
+  } catch (e) {
+    prefixMessage.value = extractErrorMessage(e, '更新前缀失败。')
+    prefixIsError.value = true
+  } finally {
+    isSavingPrefix.value = false
+  }
+}
+
 // ============ 修改邮箱 ============
 const handleSendEmailCode = async () => {
   emailMessage.value = ''
@@ -93,8 +123,7 @@ const handleSendEmailCode = async () => {
     await sendSetEmailCode(newEmail.value)
     emailMessage.value = '验证码已发送到新邮箱。'
   } catch (error) {
-    const err = error as AxiosError<{ errorMessage?: string }>
-    emailMessage.value = err.response?.data?.errorMessage || '验证码发送失败，请重试。'
+    emailMessage.value = extractErrorMessage(error, '验证码发送失败，请重试。')
     emailIsError.value = true
   } finally {
     isSendingEmailCode.value = false
@@ -116,9 +145,9 @@ const handleSaveEmail = async () => {
     newEmail.value = ''
     emailCode.value = ''
     userEmail.value = res.email
+    await loadUserInfo()
   } catch (error) {
-    const err = error as AxiosError<{ errorMessage?: string }>
-    emailMessage.value = err.response?.data?.errorMessage || '邮箱修改失败，请重试。'
+    emailMessage.value = extractErrorMessage(error, '邮箱修改失败，请重试。')
     emailIsError.value = true
   } finally {
     isSavingEmail.value = false
@@ -134,8 +163,7 @@ const handleSendPasswordCode = async () => {
     await sendChangePasswordEmailCode()
     passwordMessage.value = '验证码已发送到您的邮箱。'
   } catch (error) {
-    const err = error as AxiosError<{ errorMessage?: string }>
-    passwordMessage.value = err.response?.data?.errorMessage || '验证码发送失败，请重试。'
+    passwordMessage.value = extractErrorMessage(error, '验证码发送失败，请重试。')
     passwordIsError.value = true
   } finally {
     isSendingPasswordCode.value = false
@@ -186,13 +214,12 @@ const handleSavePassword = async () => {
     confirmNewPassword.value = ''
     passwordCode.value = ''
     // 修改密码会清除全部会话，需退出前端登录态
-    localStorage.removeItem('userInfo')
+    setUser(null)
     setTimeout(() => {
       window.location.href = '/login'
     }, 1500)
   } catch (error) {
-    const err = error as AxiosError<{ errorMessage?: string }>
-    passwordMessage.value = err.response?.data?.errorMessage || '密码修改失败，请重试。'
+    passwordMessage.value = extractErrorMessage(error, '密码修改失败，请重试。')
     passwordIsError.value = true
   } finally {
     isSavingPassword.value = false
@@ -211,158 +238,222 @@ const handleUnbindOidc = async (providerId: string) => {
     const res = await unbindOidc(providerId)
     bindingOIDC.value = res.bindingOIDC
     oidcMessage.value = '已解绑该第三方账号。'
+    await loadUserInfo()
   } catch (error) {
-    const err = error as AxiosError<{ errorMessage?: string }>
-    oidcMessage.value = err.response?.data?.errorMessage || '解绑失败，请重试。'
+    oidcMessage.value = extractErrorMessage(error, '解绑失败，请重试。')
     oidcIsError.value = true
   }
 }
 </script>
 
 <template>
-  <div class="flex-1 space-y-4 p-4 md:p-8 pt-6">
-    <div class="flex items-center justify-between space-y-2">
-      <h2 class="text-3xl font-bold tracking-tight">
-        个人信息
-      </h2>
-    </div>
+  <div class="space-y-6 p-4 md:p-8 pt-6">
+    <AppPageHeader title="个人信息" description="管理您的账户信息、佩戴前缀、邮箱、密码与第三方登录。"/>
 
-    <div class="space-y-6">
-      <!-- 账号概览 -->
-      <Card>
-        <CardHeader>
-          <CardTitle>账号信息</CardTitle>
-          <CardDescription>您的基本账号信息。</CardDescription>
-        </CardHeader>
-        <CardContent class="grid gap-2 text-sm">
-          <p><span class="text-muted-foreground">显示名：</span>{{ displayName || '-' }}</p>
-          <p><span class="text-muted-foreground">邮箱：</span>{{ userEmail || '未绑定' }}</p>
-          <p><span class="text-muted-foreground">密码：</span>{{ hasPassword ? '已设置' : '未设置' }}</p>
-        </CardContent>
-      </Card>
+    <!-- 账号概览 -->
+    <Card>
+      <CardHeader>
+        <CardTitle>账号信息</CardTitle>
+        <CardDescription>您的基本账号信息与社区身份。</CardDescription>
+      </CardHeader>
+      <CardContent class="grid gap-4 text-sm md:grid-cols-2">
+        <div class="space-y-3">
+          <div>
+            <p class="text-xs text-muted-foreground">展示名</p>
+            <UserDisplay
+                :username="user?.username || ''"
+                :prefix="(user?.prefixes ?? []).find(p => p.id === user?.prefixId) ?? null"
+                :groups="user?.identityGroups.map(g => g.displayName ?? g.name) ?? []"
+                :role="user?.role ?? null"
+            />
+          </div>
+          <div>
+            <p class="text-xs text-muted-foreground">系统角色</p>
+            <Badge v-if="user?.role" variant="secondary">{{ ROLE_LABEL[user.role] }}</Badge>
+          </div>
+        </div>
+        <div class="space-y-3">
+          <div>
+            <p class="text-xs text-muted-foreground">邮箱</p>
+            <p>{{ userEmail || '未绑定' }}</p>
+          </div>
+          <div>
+            <p class="text-xs text-muted-foreground">密码</p>
+            <p>{{ hasPassword ? '已设置' : '未设置' }}</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+
+    <!-- 佩戴前缀 -->
+    <Card v-if="user && user.prefixes.length > 0">
+      <CardHeader>
+        <CardTitle>佩戴前缀</CardTitle>
+        <CardDescription>选择您要向社区展示的前缀，或选择不佩戴。</CardDescription>
+      </CardHeader>
+      <CardContent class="space-y-4">
+        <div class="flex flex-wrap gap-2">
+          <Button
+              :variant="wearPrefixId === null ? 'default' : 'outline'"
+              size="sm"
+              @click="wearPrefixId = null"
+          >
+            不佩戴
+          </Button>
+          <Button
+              v-for="prefix in user.prefixes"
+              :key="prefix.id"
+              size="sm"
+              :variant="wearPrefixId === prefix.id ? 'default' : 'outline'"
+              :style="{'backgroundColor': prefix.backgroundColor || undefined}"
+              @click="wearPrefixId = prefix.id"
+          >
+            <span :style="{color: prefix.backgroundColor ? undefined : undefined}">{{ prefix.value }}</span>
+          </Button>
+        </div>
+        <div v-if="prefixMessage" :class="['text-sm font-medium', prefixIsError ? 'text-destructive' : 'text-primary']">
+          {{ prefixMessage }}
+        </div>
+        <Button :disabled="isSavingPrefix" @click="handleSavePrefix">
+          {{ isSavingPrefix ? '保存中...' : '保存佩戴' }}
+        </Button>
+      </CardContent>
+    </Card>
+
+    <!-- 修改邮箱 / 修改密码 / OIDC 绑定 -->
+    <Tabs default-value="email" class="space-y-4">
+      <TabsList class="grid w-full grid-cols-3">
+        <TabsTrigger value="email">修改邮箱</TabsTrigger>
+        <TabsTrigger value="password">修改密码</TabsTrigger>
+        <TabsTrigger value="oidc">第三方登录</TabsTrigger>
+      </TabsList>
 
       <!-- 修改邮箱 -->
-      <Card>
-        <CardHeader>
-          <CardTitle>修改邮箱</CardTitle>
-          <CardDescription>更新您的账户邮箱地址。若当前未绑定邮箱，可在此首次绑定。</CardDescription>
-        </CardHeader>
-        <CardContent class="space-y-4">
-          <div class="grid gap-2">
-            <Label for="new-email">新邮箱</Label>
-            <Input id="new-email" v-model="newEmail" placeholder="输入新邮箱地址" type="email"/>
-          </div>
-          <div class="grid gap-2">
-            <Label for="email-code">邮箱验证码</Label>
-            <div class="flex gap-2">
-              <Input id="email-code" v-model="emailCode" placeholder="请输入验证码"/>
-              <Button :disabled="isSendingEmailCode" type="button" variant="outline" @click="handleSendEmailCode">
-                {{ isSendingEmailCode ? '发送中...' : '获取验证码' }}
-              </Button>
+      <TabsContent value="email">
+        <Card>
+          <CardHeader>
+            <CardTitle>修改邮箱</CardTitle>
+            <CardDescription>更新您的账户邮箱地址。若当前未绑定邮箱，可在此首次绑定。</CardDescription>
+          </CardHeader>
+          <CardContent class="space-y-4">
+            <div class="grid gap-2">
+              <Label for="new-email">新邮箱</Label>
+              <Input id="new-email" v-model="newEmail" placeholder="输入新邮箱地址" type="email"/>
             </div>
-          </div>
-          <div v-if="emailMessage" :class="['text-sm font-medium', emailIsError ? 'text-destructive' : 'text-primary']">
-            {{ emailMessage }}
-          </div>
-          <Button :disabled="isSavingEmail" @click="handleSaveEmail">
-            {{ isSavingEmail ? '保存中...' : '保存新邮箱' }}
-          </Button>
-        </CardContent>
-      </Card>
+            <div class="grid gap-2">
+              <Label for="email-code">邮箱验证码</Label>
+              <div class="flex gap-2">
+                <Input id="email-code" v-model="emailCode" placeholder="请输入验证码"/>
+                <Button :disabled="isSendingEmailCode" type="button" variant="outline" @click="handleSendEmailCode">
+                  {{ isSendingEmailCode ? '发送中...' : '获取验证码' }}
+                </Button>
+              </div>
+            </div>
+            <div v-if="emailMessage" :class="['text-sm font-medium', emailIsError ? 'text-destructive' : 'text-primary']">
+              {{ emailMessage }}
+            </div>
+            <Button :disabled="isSavingEmail" @click="handleSaveEmail">
+              {{ isSavingEmail ? '保存中...' : '保存新邮箱' }}
+            </Button>
+          </CardContent>
+        </Card>
+      </TabsContent>
 
       <!-- 修改密码 -->
-      <Card>
-        <CardHeader>
-          <CardTitle>修改密码</CardTitle>
-          <CardDescription>更改您的账户密码。修改成功后所有会话将失效，需重新登录。</CardDescription>
-        </CardHeader>
-        <CardContent class="space-y-4">
-          <Tabs v-model="passwordMode" class="w-full">
-            <TabsList class="grid w-full grid-cols-2">
-              <TabsTrigger :disabled="!hasPassword" value="old">使用旧密码</TabsTrigger>
-              <TabsTrigger value="code">使用邮箱验证码</TabsTrigger>
-            </TabsList>
+      <TabsContent value="password">
+        <Card>
+          <CardHeader>
+            <CardTitle>修改密码</CardTitle>
+            <CardDescription>更改您的账户密码。修改成功后所有会话将失效，需重新登录。</CardDescription>
+          </CardHeader>
+          <CardContent class="space-y-4">
+            <Tabs v-model="passwordMode" class="w-full">
+              <TabsList class="grid w-full grid-cols-2">
+                <TabsTrigger :disabled="!hasPassword" value="old">使用旧密码</TabsTrigger>
+                <TabsTrigger value="code">使用邮箱验证码</TabsTrigger>
+              </TabsList>
 
-            <TabsContent class="grid gap-4 mt-4" value="old">
-              <div class="grid gap-2">
-                <Label for="current-password">当前密码</Label>
-                <Input id="current-password" v-model="currentPassword" placeholder="输入当前密码" type="password"/>
-              </div>
-            </TabsContent>
-
-            <TabsContent class="grid gap-4 mt-4" value="code">
-              <div class="grid gap-2">
-                <Label for="password-code">邮箱验证码</Label>
-                <div class="flex gap-2">
-                  <Input id="password-code" v-model="passwordCode" placeholder="请输入验证码"/>
-                  <Button :disabled="isSendingPasswordCode" type="button" variant="outline"
-                          @click="handleSendPasswordCode">
-                    {{ isSendingPasswordCode ? '发送中...' : '获取验证码' }}
-                  </Button>
+              <TabsContent class="grid gap-4 mt-4" value="old">
+                <div class="grid gap-2">
+                  <Label for="current-password">当前密码</Label>
+                  <Input id="current-password" v-model="currentPassword" placeholder="输入当前密码" type="password"/>
                 </div>
-              </div>
-            </TabsContent>
-          </Tabs>
+              </TabsContent>
 
-          <div class="grid gap-2">
-            <Label for="new-password">新密码</Label>
-            <Input id="new-password" v-model="newPassword" type="password" placeholder="输入新密码" />
-          </div>
-          <div class="grid gap-2">
-            <Label for="confirm-new-password">确认新密码</Label>
-            <Input id="confirm-new-password" v-model="confirmNewPassword" type="password" placeholder="再次输入新密码" />
-          </div>
-          <div v-if="passwordMessage"
-               :class="['text-sm font-medium', passwordIsError ? 'text-destructive' : 'text-primary']">
-            {{ passwordMessage }}
-          </div>
-          <Button :disabled="isSavingPassword" @click="handleSavePassword">
-            {{ isSavingPassword ? '保存中...' : '保存新密码' }}
-          </Button>
-        </CardContent>
-      </Card>
+              <TabsContent class="grid gap-4 mt-4" value="code">
+                <div class="grid gap-2">
+                  <Label for="password-code">邮箱验证码</Label>
+                  <div class="flex gap-2">
+                    <Input id="password-code" v-model="passwordCode" placeholder="请输入验证码"/>
+                    <Button :disabled="isSendingPasswordCode" type="button" variant="outline"
+                            @click="handleSendPasswordCode">
+                      {{ isSendingPasswordCode ? '发送中...' : '获取验证码' }}
+                    </Button>
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
+
+            <div class="grid gap-2">
+              <Label for="new-password">新密码</Label>
+              <Input id="new-password" v-model="newPassword" type="password" placeholder="输入新密码"/>
+            </div>
+            <div class="grid gap-2">
+              <Label for="confirm-new-password">确认新密码</Label>
+              <Input id="confirm-new-password" v-model="confirmNewPassword" type="password" placeholder="再次输入新密码"/>
+            </div>
+            <div v-if="passwordMessage"
+                 :class="['text-sm font-medium', passwordIsError ? 'text-destructive' : 'text-primary']">
+              {{ passwordMessage }}
+            </div>
+            <Button :disabled="isSavingPassword" @click="handleSavePassword">
+              {{ isSavingPassword ? '保存中...' : '保存新密码' }}
+            </Button>
+          </CardContent>
+        </Card>
+      </TabsContent>
 
       <!-- OIDC 绑定 -->
-      <Card>
-        <CardHeader>
-          <CardTitle>第三方账号绑定</CardTitle>
-          <CardDescription>关联您的 OpenID Connect 身份提供商。</CardDescription>
-        </CardHeader>
-        <CardContent class="space-y-4">
-          <!-- 已绑定 -->
-          <div v-if="boundProviders.length > 0" class="grid gap-2">
-            <p class="text-sm text-muted-foreground">已绑定：</p>
-            <div v-for="provider in boundProviders" :key="provider.providerId"
-                 class="flex items-center justify-between rounded-md border px-3 py-2">
-              <span class="flex items-center gap-2 text-sm">
-                <img v-if="provider.iconUrl" :alt="provider.displayName || provider.providerId" :src="provider.iconUrl"
-                     class="h-4 w-4"/>
-                {{ provider.displayName || provider.providerId }}
-              </span>
-              <Button size="sm" variant="outline" @click="handleUnbindOidc(provider.providerId)">解绑</Button>
+      <TabsContent value="oidc">
+        <Card>
+          <CardHeader>
+            <CardTitle>第三方账号绑定</CardTitle>
+            <CardDescription>关联您的 OpenID Connect 身份提供商。绑定后可用于快速登录。</CardDescription>
+          </CardHeader>
+          <CardContent class="space-y-4">
+            <div v-if="boundProviders.length > 0" class="grid gap-2">
+              <p class="text-sm text-muted-foreground">已绑定：</p>
+              <div v-for="provider in boundProviders" :key="provider.providerId"
+                   class="flex items-center justify-between rounded-md border px-3 py-2">
+                <span class="flex items-center gap-2 text-sm">
+                  <img v-if="provider.iconUrl" :alt="provider.displayName || provider.providerId" :src="provider.iconUrl"
+                       class="h-4 w-4"/>
+                  {{ provider.displayName || provider.providerId }}
+                </span>
+                <Button size="sm" variant="outline" @click="handleUnbindOidc(provider.providerId)">解绑</Button>
+              </div>
             </div>
-          </div>
-          <p v-else-if="oidcProviders.length === 0" class="text-sm text-muted-foreground">暂无可用提供商。</p>
+            <p v-else-if="oidcProviders.length === 0" class="text-sm text-muted-foreground">暂无可用提供商。</p>
 
-          <!-- 未绑定 -->
-          <div v-if="unboundProviders.length > 0" class="grid gap-2">
-            <p class="text-sm text-muted-foreground">可绑定：</p>
-            <div v-for="provider in unboundProviders" :key="provider.providerId"
-                 class="flex items-center justify-between rounded-md border px-3 py-2">
-              <span class="flex items-center gap-2 text-sm">
-                <img v-if="provider.iconUrl" :alt="provider.displayName || provider.providerId" :src="provider.iconUrl"
-                     class="h-4 w-4"/>
-                {{ provider.displayName || provider.providerId }}
-              </span>
-              <Button size="sm" @click="handleBindOidc(provider.providerId)">绑定</Button>
+            <div v-if="unboundProviders.length > 0" class="grid gap-2">
+              <p class="text-sm text-muted-foreground">可绑定：</p>
+              <div v-for="provider in unboundProviders" :key="provider.providerId"
+                   class="flex items-center justify-between rounded-md border px-3 py-2">
+                <span class="flex items-center gap-2 text-sm">
+                  <img v-if="provider.iconUrl" :alt="provider.displayName || provider.providerId" :src="provider.iconUrl"
+                       class="h-4 w-4"/>
+                  {{ provider.displayName || provider.providerId }}
+                </span>
+                <Button size="sm" @click="handleBindOidc(provider.providerId)">绑定</Button>
+              </div>
             </div>
-          </div>
 
-          <div v-if="oidcMessage" :class="['text-sm font-medium', oidcIsError ? 'text-destructive' : 'text-primary']">
-            {{ oidcMessage }}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+            <div v-if="oidcMessage" :class="['text-sm font-medium', oidcIsError ? 'text-destructive' : 'text-primary']">
+              {{ oidcMessage }}
+            </div>
+          </CardContent>
+        </Card>
+      </TabsContent>
+    </Tabs>
   </div>
 </template>

@@ -5,9 +5,9 @@ import {themeOptions} from '@/themes/themes'
 /**
  * 主题偏好（localStorage 持久化）：
  * - 'system'  跟随系统 / 浏览器深浅色偏好
- * - 'light' / 'dark' / 'ocean' 手动指定主题
+ * - 'light' / 'dark' / 'ocean' / 'aurora' / 'aurora-dark' 手动指定主题
  */
-type ThemePreset = 'system' | 'light' | 'dark' | 'ocean'
+type ThemePreset = 'system' | 'light' | 'dark' | 'ocean' | 'aurora' | 'aurora-dark'
 
 const presetStorage = useStorage<ThemePreset>('theme-preset', 'system')
 

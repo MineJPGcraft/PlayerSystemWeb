@@ -21,6 +21,8 @@ http.interceptors.response.use(
     (error: AxiosError) => {
         if (error.response?.status === 401) {
             localStorage.removeItem('userInfo');
+            // 通知全局用户状态同步清除（useUserInfo 监听该事件）
+            window.dispatchEvent(new CustomEvent('auth:expired'));
             // 动态导入以解除 http → router → ... → api 的静态循环依赖；
             // router 已在 main.ts 静态加载，此处可从模块缓存即时解析。
             import('@/router')

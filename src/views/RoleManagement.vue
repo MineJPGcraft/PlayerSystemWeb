@@ -5,7 +5,9 @@ import {
   deleteYggdrasilProfile,
   getProfileDetailsAPI,
   getYggdrasilProfiles,
+  renameYggdrasilProfile,
   uploadTextureAPI,
+  type YggdrasilProfile,
 } from '@/api'
 import {parseTexturesProperty, parseUploadableTextures, toSameOriginUrl} from '@/lib/textures'
 import {Card, CardContent, CardDescription, CardHeader, CardTitle,} from '@/components/ui/card'
@@ -22,6 +24,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import AppPageHeader from '@/components/AppPageHeader.vue'
 import {IdleAnimation, SkinViewer} from 'skinview3d' // 导入 SkinViewer
 import {AxiosError} from 'axios'
 
@@ -50,6 +61,14 @@ const isCreateRoleError = ref(false)
 const deletingRoleId = ref('')
 const deleteRoleMessage = ref('')
 const isDeleteRoleError = ref(false)
+
+// 改名角色相关状态
+const renameTarget = ref<{id: string; name: string} | null>(null)
+const renameName = ref('')
+const renameOpen = ref(false)
+const renaming = ref(false)
+const renameMessage = ref('')
+const renameIsError = ref(false)
 
 // 皮肤上传相关状态
 const skinFile = ref<File | null>(null)
@@ -207,6 +226,41 @@ const selectProfile = (profile: ProfileDetail) => {
   capeFile.value = null
   capeMessage.value = ''
   isCapeError.value = false
+}
+
+// 打开改名弹窗
+const openRename = (profile: ProfileDetail) => {
+  renameTarget.value = {id: profile.id, name: profile.name}
+  renameName.value = profile.name
+  renameMessage.value = ''
+  renameIsError.value = false
+  renameOpen.value = true
+}
+
+// 确认改名（默认一年最多改一次）
+const handleRename = async () => {
+  if (!renameTarget.value) return
+  renameMessage.value = ''
+  renameIsError.value = false
+  if (!renameName.value.trim()) {
+    renameMessage.value = '请输入新的角色名称。'
+    renameIsError.value = true
+    return
+  }
+  renaming.value = true
+  try {
+    await renameYggdrasilProfile(renameTarget.value.id, renameName.value.trim())
+    renameMessage.value = '角色改名成功，令牌已吊销，请重新登录游戏。'
+    renameOpen.value = false
+    await loadProfiles()
+  } catch (err) {
+    console.error('角色改名失败:', err)
+    const axiosErr = err as AxiosError<{ errorMessage?: string }>
+    renameMessage.value = axiosErr.response?.data?.errorMessage || '角色改名失败，请重试。'
+    renameIsError.value = true
+  } finally {
+    renaming.value = false
+  }
 }
 
 const handleFileChange = (event: Event, type: 'skin' | 'cape') => {
@@ -373,12 +427,8 @@ watch(selectedProfile, async (newProfile) => { // watch 函数改为 async
 </script>
 
 <template>
-  <div class="flex-1 space-y-4 p-4 md:p-8 pt-6">
-    <div class="flex items-center justify-between space-y-2">
-      <h2 class="text-3xl font-bold tracking-tight">
-        角色管理
-      </h2>
-    </div>
+  <div class="flex-1 space-y-6 p-4 md:p-8 pt-6">
+    <AppPageHeader title="角色管理" description="为您的账号创建 Minecraft 角色，管理皮肤与披风。"/>
 
     <div v-if="loading" class="text-center py-8">
       <p>正在加载角色信息...</p>
@@ -439,6 +489,7 @@ watch(selectedProfile, async (newProfile) => { // watch 函数改为 async
                 </TableCell>
                 <TableCell class="text-right space-x-2">
                   <Button size="sm" @click="selectProfile(profile)">选择</Button>
+                  <Button size="sm" variant="outline" @click="openRename(profile)">改名</Button>
                   <Button :disabled="deletingRoleId === profile.id" size="sm" variant="destructive"
                           @click="handleDeleteRole(profile.id)">
                     {{ deletingRoleId === profile.id ? '删除中...' : '删除' }}
@@ -537,5 +588,32 @@ watch(selectedProfile, async (newProfile) => { // watch 函数改为 async
         </Card>
       </template>
     </div>
+
+    <!-- 角色改名弹窗 -->
+    <Dialog v-model:open="renameOpen">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>角色改名</DialogTitle>
+          <DialogDescription>
+            改名后该角色相关游戏令牌将全部吊销，需重新登录；默认每个角色一年最多改一次。
+          </DialogDescription>
+        </DialogHeader>
+        <div class="space-y-4">
+          <div class="grid gap-2">
+            <Label for="rename-name">新角色名称</Label>
+            <Input id="rename-name" v-model="renameName" placeholder="输入新的角色名称"/>
+          </div>
+          <div v-if="renameMessage" :class="['text-sm font-medium', renameIsError ? 'text-destructive' : 'text-primary']">
+            {{ renameMessage }}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" @click="renameOpen = false">取消</Button>
+          <Button :disabled="renaming" @click="handleRename">
+            {{ renaming ? '保存中...' : '确认改名' }}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

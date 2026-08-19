@@ -5,18 +5,21 @@ import {Button} from '@/components/ui/button';
 import {Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle,} from '@/components/ui/card';
 import {Input} from '@/components/ui/input';
 import {Label} from '@/components/ui/label';
+import AuthShell from '@/components/AuthShell.vue';
 import {registerUser, sendRegisterEmailCode} from '@/api';
-import {AxiosError} from 'axios';
+import {withCaptcha} from '@/composables/useCaptcha';
+import {extractErrorMessage} from '@/lib/apiError';
 
 const email = ref('');
-const emailCode = ref(''); // 新增：注册邮箱验证码
+const emailCode = ref('');
+const username = ref('');
 const password = ref('');
 const confirmPassword = ref('');
-const displayName = ref(''); // 账户显示名（原角色名改为显示名，角色需登录后创建）
 const message = ref('');
 const isError = ref(false);
 const isLoading = ref(false);
 const isSendingCode = ref(false);
+const captchaEl = ref<HTMLDivElement | null>(null);
 const router = useRouter();
 
 const handleSendCode = async () => {
@@ -29,12 +32,13 @@ const handleSendCode = async () => {
   message.value = '';
   isError.value = false;
   try {
-    await sendRegisterEmailCode(email.value);
+    await withCaptcha('email-code-register', () => captchaEl.value, async (headers) => {
+      await sendRegisterEmailCode(email.value, headers);
+    });
     message.value = '验证码已发送到您的邮箱。';
   } catch (error) {
     console.error('发送验证码失败:', error);
-    const err = error as AxiosError<{ errorMessage?: string }>;
-    message.value = err.response?.data?.errorMessage || '验证码发送失败，请重试。';
+    message.value = extractErrorMessage(error, '验证码发送失败，请重试。');
     isError.value = true;
   } finally {
     isSendingCode.value = false;
@@ -45,12 +49,11 @@ const handleRegister = async () => {
   message.value = '';
   isError.value = false;
 
-  if (!email.value || !emailCode.value || !password.value || !confirmPassword.value || !displayName.value) { // 新增 emailCode 验证
+  if (!email.value || !emailCode.value || !password.value || !confirmPassword.value || !username.value) {
     message.value = '所有字段都是必填项。';
     isError.value = true;
     return;
   }
-
   if (password.value !== confirmPassword.value) {
     message.value = '两次输入的密码不一致。';
     isError.value = true;
@@ -59,9 +62,9 @@ const handleRegister = async () => {
 
   isLoading.value = true;
   try {
-    // 注册用户（邮箱 + 验证码 + 显示名）
-    await registerUser(email.value, password.value, emailCode.value, displayName.value);
-
+    await withCaptcha('register', () => captchaEl.value, async (headers) => {
+      await registerUser(email.value, password.value, emailCode.value, username.value, headers);
+    });
     message.value = '账户创建成功！正在跳转到登录页...';
     isError.value = false;
     setTimeout(() => {
@@ -69,8 +72,7 @@ const handleRegister = async () => {
     }, 2000);
   } catch (error) {
     console.error('注册失败:', error);
-    const err = error as AxiosError<{ errorMessage?: string }>;
-    message.value = err.response?.data?.errorMessage || (error as Error).message || '注册失败。请重试。';
+    message.value = extractErrorMessage(error, '注册失败。请重试。');
     isError.value = true;
   } finally {
     isLoading.value = false;
@@ -79,15 +81,11 @@ const handleRegister = async () => {
 </script>
 
 <template>
-  <div class="flex items-center justify-center min-h-screen bg-background">
-    <Card class="w-full max-w-sm">
+  <AuthShell title="创建账户" description="使用邮箱注册新账户，开启您的 Minecraft 外置登录之旅。">
+    <Card class="w-full border-border/60 shadow-xl shadow-black/5 backdrop-blur">
       <CardHeader class="text-center">
-        <CardTitle class="text-2xl">
-          创建账户
-        </CardTitle>
-        <CardDescription>
-          输入您的邮箱、验证码、密码和显示名开始。
-        </CardDescription>
+        <CardTitle class="text-2xl">创建账户</CardTitle>
+        <CardDescription>输入邮箱、验证码、用户名与密码开始。</CardDescription>
       </CardHeader>
       <CardContent class="grid gap-4">
         <div class="grid gap-2">
@@ -104,17 +102,22 @@ const handleRegister = async () => {
           <Input id="email-code" v-model="emailCode" placeholder="请输入验证码" required type="text"/>
         </div>
         <div class="grid gap-2">
-          <Label for="display-name">显示名</Label>
-          <Input id="display-name" v-model="displayName" placeholder="请输入您的显示名" required type="text"/>
+          <Label for="username">用户名</Label>
+          <Input id="username" v-model="username" placeholder="登录后对外展示的名称" required type="text" autocomplete="username"/>
         </div>
         <div class="grid gap-2">
           <Label for="password">密码</Label>
-          <Input id="password" v-model="password" type="password" required />
+          <Input id="password" v-model="password" type="password" required autocomplete="new-password"/>
+          <p class="text-xs text-muted-foreground">需包含字母和数字且不少于 6 位。</p>
         </div>
         <div class="grid gap-2">
           <Label for="confirm-password">确认密码</Label>
-          <Input id="confirm-password" v-model="confirmPassword" type="password" required />
+          <Input id="confirm-password" v-model="confirmPassword" type="password" required autocomplete="new-password"/>
         </div>
+
+        <!-- 人机验证挂载点 -->
+        <div ref="captchaEl" class="min-h-0"/>
+
         <div v-if="message" :class="['text-sm font-medium', isError ? 'text-destructive' : 'text-primary']">
           {{ message }}
         </div>
@@ -129,5 +132,5 @@ const handleRegister = async () => {
         </router-link>
       </CardFooter>
     </Card>
-  </div>
+  </AuthShell>
 </template>

@@ -7,6 +7,7 @@ import App from './App.vue'
 import router from './router';
 import {loadSiteConfig} from './lib/siteConfig';
 import './composables/useTheme'; // 初始化主题：加载时即按存储/系统偏好应用 data-theme，避免首屏闪白
+import './composables/useUserInfo'; // 初始化登录态：先校验/清理 localStorage 中的旧版用户信息，供路由守卫使用
 
 declare module 'vue' {
     interface ComponentCustomProperties {

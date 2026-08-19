@@ -3,6 +3,7 @@ import {onMounted, ref} from 'vue'
 import {Card, CardContent, CardDescription, CardHeader, CardTitle,} from '@/components/ui/card'
 import {Button} from '@/components/ui/button'
 import {Label} from '@/components/ui/label'
+import AppPageHeader from '@/components/AppPageHeader.vue'
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow,} from '@/components/ui/table'
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue,} from '@/components/ui/select'
 import {
@@ -122,12 +123,8 @@ const copyToClipboard = async (text: string) => {
 </script>
 
 <template>
-  <div class="flex-1 space-y-4 p-4 md:p-8 pt-6">
-    <div class="flex items-center justify-between space-y-2">
-      <h2 class="text-3xl font-bold tracking-tight">
-        启动器会话
-      </h2>
-    </div>
+  <div class="flex-1 space-y-6 p-4 md:p-8 pt-6">
+    <AppPageHeader title="启动器会话" description="生成并管理用于 Minecraft 启动器登录的会话凭据。"/>
 
     <!-- 创建启动器会话 -->
     <Card>

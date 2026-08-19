@@ -139,12 +139,16 @@ const defaultConfig: SiteConfig = {
         features: {
             enabled: true,
             title: '平台功能',
-            description: '一站式管理您的账号、角色与皮肤。',
+            description: '一站式管理您的账号、角色、皮肤与社区内容。',
             items: [
                 {label: '邮箱注册', description: '使用邮箱注册新账号', flag: 'email_register'},
-                {label: '邮箱登录', description: '支持密码与邮箱验证码登录', flag: 'email_login'},
+                {label: '邮箱登录', description: '支持密码、用户名与邮箱验证码登录', flag: 'email_login'},
                 {label: 'OIDC 第三方登录', description: '支持 Google、GitHub 等授权登录', flag: 'find_oidc'},
-                {label: '人机验证', description: '注册与登录安全防护', flag: 'find_captcha'}
+                {label: '人机验证', description: '注册与登录安全防护', flag: 'find_captcha'},
+                {label: '角色与皮肤', description: '3D 预览、皮肤与披风管理'},
+                {label: '投票与议题', description: '参与社区投票与议题讨论'},
+                {label: '通知与公告', description: '站内通知与全站公告'},
+                {label: '管理后台', description: '用户、封禁、审计与后台控制台'}
             ]
         },
         launcherGuide: {
@@ -174,6 +178,14 @@ const defaultConfig: SiteConfig = {
                     {text: '角色管理', to: '/role-management'},
                     {text: '启动器会话', to: '/launcher-sessions'},
                     {text: '个人信息', to: '/profile'}
+                ]
+            },
+            {
+                title: '社区',
+                links: [
+                    {text: '投票', to: '/votes'},
+                    {text: '议题', to: '/issues'},
+                    {text: '通知', to: '/notifications'}
                 ]
             }
         ],
