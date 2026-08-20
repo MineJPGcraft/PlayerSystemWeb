@@ -118,7 +118,7 @@ const routes: RouteRecordRaw[] = [
             {
                 path: 'console',
                 component: () => import('@/views/console/ConsoleLayout.vue'),
-                meta: {requiresAuth: true, sidebar: true, title: '管理后台', consoleAuth: true},
+                meta: {requiresAuth: true, sidebar: true, title: '管理后台', consoleAuth: true, minRole: 'admin'},
                 children: [
                     {
                         path: '',
@@ -219,8 +219,9 @@ router.beforeEach((to, from, next) => {
     const roleLevel = (role: string | null): number =>
         ({user: 0, helper: 1, moderator: 2, admin: 3})[role as 'user' | 'helper' | 'moderator' | 'admin'] ?? -1;
 
-    // 定义只有未认证用户才能访问的页面
-    const publicOnlyPages = ['login', 'register', 'reset-password', 'console-login'];
+    // 定义只有未认证用户才能访问的页面（后台登录页 console-login 除外，
+    // 它是「已登录管理员」的后台密码登录入口，不能被当作公开页面重定向）
+    const publicOnlyPages = ['login', 'register', 'reset-password'];
     const isPublicOnlyPage = publicOnlyPages.includes(String(to.name));
 
     // 情况1: 用户已认证，但尝试访问登录/注册/重置密码页面
@@ -243,9 +244,18 @@ router.beforeEach((to, from, next) => {
     else if (to.meta.consoleAuth && !getConsoleJwt()) {
         next({name: 'console-login'});
     }
-    // 情况4: 已持有后台 JWT 访问后台登录页，直接进入后台
-    else if (to.name === 'console-login' && getConsoleJwt()) {
-        next({name: 'console-overview'});
+    // 情况3.5: 后台登录页 —— 已持有 JWT 直接进后台；未登录主站先去主登录；
+    // 已登录主站（要求为管理员）则停留在后台密码登录页
+    else if (to.name === 'console-login') {
+        if (getConsoleJwt()) {
+            next({name: 'console-overview'});
+        } else if (!isAuthenticated) {
+            next({name: 'login', query: {redirect: '/console'}});
+        } else if (roleLevel(currentRole) < roleLevel('admin')) {
+            next({name: 'dashboard'});
+        } else {
+            next();
+        }
     }
     // 其他情况: 继续导航
     else {
